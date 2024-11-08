@@ -1,0 +1,35 @@
+<launch>
+    <!-- Launch the kortex_driver -->
+    <include file="$(find kortex_driver)/launch/kortex_driver.launch" />
+
+    <!-- Delay to ensure the kortex_driver is fully initialized -->
+    <param name="kortex_driver_delay" value="5.0" type="double"/>
+    <rosparam command="load" param="kortex_driver_delay"/>
+
+    <!-- Launch the kinova_vision_rgbd -->
+    <include file="$(find kinova_vision)/launch/kinova_vision_rgbd.launch" />
+
+    <!-- Delay to ensure the kinova_vision_rgbd is fully initialized -->
+    <param name="kinova_vision_rgbd_delay" value="5.0" type="double"/>
+    <rosparam command="load" param="kinova_vision_rgbd_delay"/>
+
+    <!-- Launch the darknet_ros -->
+    <include file="$(find darknet_ros)/launch/darknet_ros.launch" />
+
+    <!-- Delay to ensure the darknet_ros is fully initialized -->
+    <param name="darknet_ros_delay" value="5.0" type="double"/>
+    <rosparam command="load" param="darknet_ros_delay"/>
+
+    <!-- Launch the object detection node -->
+    <node pkg="kortex_examples" type="Object_dectection_localization.py" name="object_detection_node" output="screen" cwd="node">
+        <!-- Add any parameters or remappings here if needed -->
+    </node>
+
+    <!-- Launch the move node with namespace -->
+    <group ns="my_gen3">
+        <node pkg="kortex_examples" type="moveit" name="move_to_specific_point" output="screen" cwd="node">
+            <!-- Add any parameters or remappings here if needed -->
+        </node>
+    </group>
+</launch>
+
