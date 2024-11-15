@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 import time
@@ -8,6 +8,8 @@ import numpy as np
 
 from kortex_driver.srv import *
 from kortex_driver.msg import *
+
+from threading import Thread
 
 class ExampleWaypointActionClient:
     def __init__(self):
@@ -46,6 +48,9 @@ class ExampleWaypointActionClient:
             self.get_product_configuration = rospy.ServiceProxy(get_product_configuration_full_name, GetProductConfiguration)
             
             self.is_init_success = True  # Initialize success flag here
+
+            # <RTEN> storing the buffered waypoints recieved from xr
+            self.buffered_way_points = []
 
         except rospy.ROSException as e:
             rospy.logerr("ROS Initialization failed: {}".format(e))
@@ -164,56 +169,84 @@ class ExampleWaypointActionClient:
             rospy.loginfo("FINISHED ONCE")
             return True
         
-    def telexr_move_to_pose(self):
+    def buffer_pose(self):
+         
+        # if len(self.buffered_way_points) == 0:
+        while True:
+            with open('data', 'r') as file:
+                data = file.read().strip()  # Read and remove any extra whitespace
+            with open('t1', 'r') as file:
+                time_end_bridge = file.read().strip()  # Read and remove any extra whitespace
+            
+            if data:
+                time1, data_string = data.split(":", 1) # split only once for the first :
 
+                if data_string.strip():  # Check if data_string is not empty or only whitespace
+                    six_dof = eval(data_string)
+                else:
+                    # print("ERROR: Invalid data_string, skipping eval")
+                    continue
+            else:
+                # print("ERROR: None data")
+                continue
+
+            # home coordinate is (0.5, 0.0, 0.5)
+            # 6DoF [0]: x, [1]: y, [2]: z
+            # conversion:
+            # robot x == 1 * XR[z]
+            # robot y == -1 * XR[x]
+            # robot z == 1 * XR[y]
+            x = 0.5 + (six_dof[2] * 1)
+            y = 0.0 + (six_dof[0] * -1)
+            z = 0.5 + (six_dof[1] * 1)
+
+            # if [x,y,z] not in self.buffered_way_points:
+            #     self.buffered_way_points.append([x,y,z])
+
+            if len(self.buffered_way_points) == 0:
+                self.buffered_way_points.append([x,y,z])
+
+            time.sleep(0.1)
+        
+    def telexr_move_to_pose(self):
         self.last_action_notif_type = None
 
-        client = actionlib.SimpleActionClient('/' + self.robot_name + '/cartesian_trajectory_controller/follow_cartesian_trajectory', FollowCartesianTrajectoryAction)
+        client = actionlib.SimpleActionClient('/' + self.robot_name + '/cartesian_trajectory_controller/follow_cartesian_trajectory', kortex_driver.msg.FollowCartesianTrajectoryAction)
 
         client.wait_for_server()
 
-        goal = FollowCartesianTrajectoryGoal()
+        config = self.get_product_configuration()
 
-        with open('data', 'r') as file:
-            data = file.read().strip()  # Read and remove any extra whitespace
-        with open('t1', 'r') as file:
-            time_end_bridge = file.read().strip()  # Read and remove any extra whitespace
-        
-        if data:
-            time1, data_string = data.split(":", 1) # split only once for the first :
+        while True:
 
-            if data_string.strip():  # Check if data_string is not empty or only whitespace
-                six_dof = eval(data_string)
+            goal = FollowCartesianTrajectoryGoal()
+
+            if len(self.buffered_way_points) < 1:
+                continue
+            
+            waypoints_count = len(self.buffered_way_points)
+
+            for e in self.buffered_way_points:
+                waypoint = self.FillCartesianWaypoint(e[0], e[1], e[2], math.radians(90), 0, math.radians(90), blending_radius=0)
+                goal.trajectory.append(waypoint)
+            
+            self.buffered_way_points = [] # clear after the way points are sent
+
+            # if goal[0] == None:
+            #     continue
+
+            # Call the service
+            rospy.loginfo(f"Sending {waypoints_count} waypoints to action server...")
+            try:
+                client.send_goal(goal)
+            except rospy.ServiceException:
+                rospy.logerr("Failed to send goal.")
+                return False
             else:
-                print("ERROR: Invalid data_string, skipping eval")
-        else:
-            print("ERROR: None data")
-            return False
-
-        # home coordinate is (0.5, 0.0, 0.5)
-        # 6DoF [0]: x, [1]: y, [2]: z
-        # conversion:
-        # robot x == 1 * XR[z]
-        # robot y == -1 * XR[x]
-        # robot z == 1 * XR[y]
-        x = 0.5 + (six_dof[2] * 1)
-        y = 0.0 + (six_dof[0] * -1)
-        z = 0.5 + (six_dof[1] * 1)
-
-        waypoint = self.FillCartesianWaypoint(x, y, z, math.radians(90), 0, math.radians(90), blending_radius=0)
-        goal.trajectory.append(waypoint)
-
-        rospy.loginfo("Sending goals to action server...")
-        # import pdb;pdb.set_trace()
-
-        try:
-            client.send_goal(goal)
-        except rospy.ServiceException as e:
-            rospy.logerr("Failed to send goal: {}".format(e))
-            return False
-        else:
-            client.wait_for_result()
-            return True
+                client.wait_for_result()
+                # return True
+                # rospy.loginfo("<RTEN> Moved to Goal!")
+                # time.sleep(0.001)
             
 
     def main(self):
@@ -226,28 +259,31 @@ class ExampleWaypointActionClient:
         except KeyError:
             pass
 
+        # create read and buffer thread
+        buffer_pose_thread = Thread(target=self.buffer_pose, args=()) # period 0.01s == 10ms
+
         if success:
             success &= self.example_clear_faults()
             success &= self.example_subscribe_to_a_robot_notification()
             success &= self.example_home_the_robot()
+            rospy.loginfo("Initialization success. Robot at Home.")
+            buffer_pose_thread.start()
             # success &= self.example_cartesian_waypoint_action()
             # success &= self.telexr_move_to_pose()
         else:
-            rospy.logerr("Initialization failed. Aborting.")
+            rospy.logerr("operation failed. Aborting.")
 
+        buffer_pose_thread.join()
+
+        # For testing purposes
+        rospy.set_param("/kortex_examples_test_results/waypoint_action_python", success)
 
         if not success:
             rospy.set_param("/kortex_examples_test_results/waypoint_action_python", False)
             rospy.logerr("The example encountered an error.")
         else:
             rospy.set_param("/kortex_examples_test_results/waypoint_action_python", True)
-
-            while True:
-                try:
-                    # success &= self.example_cartesian_waypoint_action()
-                    success &= self.telexr_move_to_pose()
-                except rospy.ROSInterruptException:
-                    print("program interrupted before completion")
+            
 
 if __name__ == "__main__":
     ex = ExampleWaypointActionClient()
