@@ -26,9 +26,16 @@ def parse_message(message):
     sum_network_latency += network_latency
     avg_network_latency = sum_network_latency / count
 
+    with open('data', 'w') as file:
+        file.write(str(time1)+":"+str(fused_pose))  # Convert list to string and write it to the file
+    with open('t1', 'w') as file:
+        file.write(str(time.time()))
+    with open('msg_id', 'w') as file:
+        file.write(str(message_id))
+
     # Log received IDs
-    with open('received_ids', 'a') as file:
-        file.write(f"{message_id}\n")
+    # with open('received_ids', 'a') as file:
+    #     file.write(f"{message_id}\n")
 
     print(f"Received: ID {message_id}, Latency: {round(network_latency*1000, 4)}ms, Avg: {round(avg_network_latency*1000, 4)}ms")
 
@@ -54,14 +61,14 @@ def robot_to_xr(robot, port, xr, period=1):
             time.sleep(period)
 
 if __name__ == '__main__':
-    host = "localhost"
+    host = "10.13.145.123"
     port = 9090
 
     listen_thread = Thread(target=listen_from_xr, args=(host, port))
-    send_thread = Thread(target=robot_to_xr, args=("", 9091, "localhost", 0.05))  # 50ms period
+    # send_thread = Thread(target=robot_to_xr, args=("", 9091, "localhost", 0.05))  # 50ms period
 
     listen_thread.start()
-    send_thread.start()
+    # send_thread.start()
 
     listen_thread.join()
-    send_thread.join()
+    # send_thread.join()

@@ -168,45 +168,48 @@ class ExampleWaypointActionClient:
             client.wait_for_result()
             rospy.loginfo("FINISHED ONCE")
             return True
+    
+    def wait_for_action_end_or_abort(self):
+        while not rospy.is_shutdown():
+            if self.last_action_notif_type == ActionEvent.ACTION_END:
+                rospy.loginfo("Received ACTION_END notification")
+                return True
+            elif self.last_action_notif_type == ActionEvent.ACTION_ABORT:
+                rospy.loginfo("Received ACTION_ABORT notification")
+                self.all_notifs_succeeded = False
+                return False
+            time.sleep(0.01)
         
-    def buffer_pose(self):
-         
-        # if len(self.buffered_way_points) == 0:
-        while True:
-            with open('data', 'r') as file:
-                data = file.read().strip()  # Read and remove any extra whitespace
-            with open('t1', 'r') as file:
-                time_end_bridge = file.read().strip()  # Read and remove any extra whitespace
-            
-            if data:
-                time1, data_string = data.split(":", 1) # split only once for the first :
-
-                if data_string.strip():  # Check if data_string is not empty or only whitespace
-                    six_dof = eval(data_string)
-                else:
-                    # print("ERROR: Invalid data_string, skipping eval")
-                    continue
-            else:
-                # print("ERROR: None data")
+    def buffer_pose(self, period=0.001):
+        while not rospy.is_shutdown():
+            try:
+                with open('data', 'r') as file:
+                    data = file.read().strip()
+                with open('t1', 'r') as file:
+                    time_end_bridge = file.read().strip()
+            except FileNotFoundError:
+                rospy.logwarn("Data or t1 file not found. Waiting...")
+                time.sleep(period)
                 continue
 
-            # home coordinate is (0.5, 0.0, 0.5)
-            # 6DoF [0]: x, [1]: y, [2]: z
-            # conversion:
-            # robot x == 1 * XR[z]
-            # robot y == -1 * XR[x]
-            # robot z == 1 * XR[y]
-            x = 0.5 + (six_dof[2] * 1)
-            y = 0.0 + (six_dof[0] * -1)
-            z = 0.5 + (six_dof[1] * 1)
+            if data:
+                try:
+                    time1, data_string = data.split(":", 1)
+                    six_dof = eval(data_string.strip())  # Use ast.literal_eval if possible for safety
+                except (ValueError, SyntaxError):
+                    rospy.logwarn("Invalid data format. Skipping...")
+                    continue
 
-            # if [x,y,z] not in self.buffered_way_points:
-            #     self.buffered_way_points.append([x,y,z])
+                x = 0.5 + six_dof[2] * 1
+                y = 0.0 + six_dof[0] * -1
+                z = 0.5 + six_dof[1] * 1
 
-            if len(self.buffered_way_points) == 0:
-                self.buffered_way_points.append([x,y,z])
+                if [x, y, z] not in self.buffered_way_points:
+                    self.buffered_way_points.append([x, y, z])
 
-            time.sleep(0.1)
+                # rospy.loginfo(f"{len(self.buffered_way_points)} waypoints...")
+
+            time.sleep(period)
         
     def telexr_move_to_pose(self):
         self.last_action_notif_type = None
@@ -221,22 +224,33 @@ class ExampleWaypointActionClient:
 
             goal = FollowCartesianTrajectoryGoal()
 
+            # import pdb; pdb.set_trace()
+
             if len(self.buffered_way_points) < 1:
                 continue
             
             waypoints_count = len(self.buffered_way_points)
 
-            for e in self.buffered_way_points:
-                waypoint = self.FillCartesianWaypoint(e[0], e[1], e[2], math.radians(90), 0, math.radians(90), blending_radius=0)
+            # only sample 10 from all
+            sampled_step = int(waypoints_count / 3)
+            if sampled_step == 0:
+                sampled_step = 1
+
+            for i in range(0, waypoints_count, sampled_step):
+                waypoint = self.FillCartesianWaypoint(self.buffered_way_points[i][0], self.buffered_way_points[i][1], self.buffered_way_points[i][2], math.radians(90), 0, math.radians(90), blending_radius=0)
                 goal.trajectory.append(waypoint)
             
-            self.buffered_way_points = [] # clear after the way points are sent
+            # for e in self.buffered_way_points:
+            #     waypoint = self.FillCartesianWaypoint(e[0], e[1], e[2], math.radians(90), 0, math.radians(90), blending_radius=0)
+            #     goal.trajectory.append(waypoint)
+            
+            self.buffered_way_points.clear()  # Clear buffered waypoints after sending
 
             # if goal[0] == None:
             #     continue
 
             # Call the service
-            rospy.loginfo(f"Sending {waypoints_count} waypoints to action server...")
+            rospy.loginfo(f"Sending {waypoints_count//sampled_step} waypoints to action server...")
             try:
                 client.send_goal(goal)
             except rospy.ServiceException:
@@ -244,6 +258,7 @@ class ExampleWaypointActionClient:
                 return False
             else:
                 client.wait_for_result()
+                # self.wait_for_action_end_or_abort()
                 # return True
                 # rospy.loginfo("<RTEN> Moved to Goal!")
                 # time.sleep(0.001)
@@ -259,21 +274,25 @@ class ExampleWaypointActionClient:
         except KeyError:
             pass
 
-        # create read and buffer thread
-        buffer_pose_thread = Thread(target=self.buffer_pose, args=()) # period 0.01s == 10ms
+        
 
         if success:
             success &= self.example_clear_faults()
             success &= self.example_subscribe_to_a_robot_notification()
             success &= self.example_home_the_robot()
             rospy.loginfo("Initialization success. Robot at Home.")
+
+            # create read and buffer thread
+            buffer_pose_thread = Thread(target=self.buffer_pose, args=()) # period 0.01s == 10ms
+            move_thread = Thread(target=self.telexr_move_to_pose)
+
             buffer_pose_thread.start()
-            # success &= self.example_cartesian_waypoint_action()
-            # success &= self.telexr_move_to_pose()
+            move_thread.start()
+
+            buffer_pose_thread.join()
+            move_thread.join()
         else:
             rospy.logerr("operation failed. Aborting.")
-
-        buffer_pose_thread.join()
 
         # For testing purposes
         rospy.set_param("/kortex_examples_test_results/waypoint_action_python", success)

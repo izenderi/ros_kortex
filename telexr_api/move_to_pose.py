@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 
-import sys
+import csv
 import rospy
 import time
 import math
 from threading import Thread
+
+import actionlib
+
 from kortex_driver.srv import *
 from kortex_driver.msg import *
 
@@ -19,8 +22,13 @@ class ExampleCartesianActionsWithNotifications:
 
             # Initialize attributes for buffered waypoints
             self.buffered_way_points = []
+            self.buffered_msg_ids = []
             self.last_action_notif_type = None
             self.all_notifs_succeeded = True
+
+            # outut csv
+            self.data_log = []
+            self.output_file = 'data.csv'
 
             # Initialize service proxies and subscribers
             self.action_topic_sub = rospy.Subscriber(
@@ -59,13 +67,13 @@ class ExampleCartesianActionsWithNotifications:
     def wait_for_action_end_or_abort(self):
         while not rospy.is_shutdown():
             if self.last_action_notif_type == ActionEvent.ACTION_END:
-                rospy.loginfo("Received ACTION_END notification")
+                # rospy.loginfo("Received ACTION_END notification")
                 return True
             elif self.last_action_notif_type == ActionEvent.ACTION_ABORT:
                 rospy.loginfo("Received ACTION_ABORT notification")
                 self.all_notifs_succeeded = False
                 return False
-            time.sleep(0.01)
+            time.sleep(0.001)
 
     def example_clear_faults(self):
         try:
@@ -79,13 +87,13 @@ class ExampleCartesianActionsWithNotifications:
             return True
 
     def example_home_the_robot(self):
+        self.last_action_notif_type = None
         req = ReadActionRequest()
         req.input.identifier = self.HOME_ACTION_IDENTIFIER
-        self.last_action_notif_type = None
         try:
             res = self.read_action(req)
-        except rospy.ServiceException:
-            rospy.logerr("Failed to call ReadAction")
+        except rospy.ServiceException as e:
+            rospy.logerr("Failed to call ReadAction: {}".format(e))
             return False
         else:
             req = ExecuteActionRequest()
@@ -93,8 +101,8 @@ class ExampleCartesianActionsWithNotifications:
             rospy.loginfo("Sending the robot home...")
             try:
                 self.execute_action(req)
-            except rospy.ServiceException:
-                rospy.logerr("Failed to call ExecuteAction")
+            except rospy.ServiceException as e:
+                rospy.logerr("Failed to call ExecuteAction: {}".format(e))
                 return False
             else:
                 return self.wait_for_action_end_or_abort()
@@ -132,8 +140,10 @@ class ExampleCartesianActionsWithNotifications:
                     data = file.read().strip()
                 with open('t1', 'r') as file:
                     time_end_bridge = file.read().strip()
+                with open('msg_id', 'r') as file:
+                    msg_id = file.read().strip()
             except FileNotFoundError:
-                rospy.logwarn("Data or t1 file not found. Waiting...")
+                rospy.logwarn("Data, t1, msg_id file not found. Waiting...")
                 time.sleep(period)
                 continue
 
@@ -149,12 +159,16 @@ class ExampleCartesianActionsWithNotifications:
                 y = 0.0 + six_dof[0] * -1
                 z = 0.5 + six_dof[1] * 1
 
-                if [x, y, z] not in self.buffered_way_points:
+                if msg_id not in self.buffered_msg_ids:
+                    self.buffered_msg_ids.append(msg_id)
                     self.buffered_way_points.append([x, y, z])
+
+                # rospy.loginfo(f"{len(self.buffered_way_points)} waypoints...")
 
             time.sleep(period)
 
     def move_to_buffered_poses(self):
+        count = 0
         while not rospy.is_shutdown():
             if len(self.buffered_way_points) == 0:
                 continue
@@ -169,8 +183,9 @@ class ExampleCartesianActionsWithNotifications:
             # my_cartesian_speed.translation = 2.5 # m/s
             # my_cartesian_speed.orientation = 150  # deg/s
 
-            for waypoint in self.buffered_way_points:
+            for msg_id, waypoint in zip(self.buffered_msg_ids, self.buffered_way_points):
                 constrained_pose = ConstrainedPose()
+                # constrained_pose = CartesianWaypoint()
 
                 # constrained_pose.constraint.oneof_type.speed.append(my_cartesian_speed)
 
@@ -180,10 +195,16 @@ class ExampleCartesianActionsWithNotifications:
                 constrained_pose.target_pose.theta_x = 90
                 constrained_pose.target_pose.theta_y = 0
                 constrained_pose.target_pose.theta_z = 90
+                # constrained_pose.blending_radius = 0.1
 
                 goal.input.oneof_action_parameters.reach_pose.append(constrained_pose)
 
-            rospy.loginfo(f"Sending {len(self.buffered_way_points)} waypoints...")
+                self.data_log.append([msg_id, f"[{waypoint[0]}, {waypoint[1]}, {waypoint[2]}, 0.0, 0.0, 0.0, 0.0]"])
+            
+            self.buffered_way_points.clear()  # Clear buffered waypoints after sending
+            self.buffered_msg_ids.clear()  # Clear buffered timestamp after sending
+
+            # rospy.loginfo(f"Sending {len(self.buffered_way_points)} waypoints...")
             self.last_action_notif_type = None
 
             try:
@@ -193,8 +214,64 @@ class ExampleCartesianActionsWithNotifications:
                 continue
             else:
                 self.wait_for_action_end_or_abort()
+                count += 1
+                if count % 10 == 0:
+                    with open(self.output_file, mode='w', newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow(["Timestamp", "gt_bot_pose"])
+                        writer.writerows(self.data_log)
 
+    def r10_move_to_buffered_poses(self):
+        count = 0
+        while not rospy.is_shutdown():
+            if len(self.buffered_way_points) == 0:
+                continue
+
+            goal = FollowCartesianTrajectoryGoal()
+            # goal.input.name = "buffered_waypoints_sequence"
+            # goal.input.handle.action_type = ActionType.REACH_POSE
+            # goal.input.handle.identifier = 1000
+
+            # Prepare and send pose 1
+            # my_cartesian_speed = CartesianSpeed()
+            # my_cartesian_speed.translation = 2.5 # m/s
+            # my_cartesian_speed.orientation = 150  # deg/s
+
+            for msg_id, waypoint in zip(self.buffered_msg_ids, self.buffered_way_points):
+                cartesianWaypoint = CartesianWaypoint()
+
+                cartesianWaypoint.pose.x = waypoint[0]
+                cartesianWaypoint.pose.y = waypoint[1]
+                cartesianWaypoint.pose.z = waypoint[2]
+                cartesianWaypoint.pose.theta_x = 90
+                cartesianWaypoint.pose.theta_y = 0
+                cartesianWaypoint.pose.theta_z = 90
+                cartesianWaypoint.reference_frame = CartesianReferenceFrame.CARTESIAN_REFERENCE_FRAME_BASE
+                cartesianWaypoint.blending_radius = 0.1
+
+                goal.trajectory.append(cartesianWaypoint)
+
+                self.data_log.append([msg_id, f"[{waypoint[0]}, {waypoint[1]}, {waypoint[2]}, 0.0, 0.0, 0.0, 0.0]"])
+            
             self.buffered_way_points.clear()  # Clear buffered waypoints after sending
+            self.buffered_msg_ids.clear()  # Clear buffered timestamp after sending
+
+            # rospy.loginfo(f"Sending {len(self.buffered_way_points)} waypoints...")
+            self.last_action_notif_type = None
+
+            try:
+                self.execute_action(goal)
+            except rospy.ServiceException as e:
+                rospy.logerr(f"Failed to send waypoints: {e}")
+                continue
+            else:
+                self.wait_for_action_end_or_abort()
+                count += 1
+                if count % 10 == 0:
+                    with open(self.output_file, mode='w', newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow(["Timestamp", "gt_bot_pose"])
+                        writer.writerows(self.data_log)
 
     def main(self):
         success = self.is_init_success
@@ -205,7 +282,8 @@ class ExampleCartesianActionsWithNotifications:
             success &= self.example_set_cartesian_reference_frame()
 
             buffer_thread = Thread(target=self.buffer_pose)
-            move_thread = Thread(target=self.move_to_buffered_poses)
+            # move_thread = Thread(target=self.move_to_buffered_poses)
+            move_thread = Thread(target=self.r10_move_to_buffered_poses)
 
             buffer_thread.start()
             move_thread.start()
