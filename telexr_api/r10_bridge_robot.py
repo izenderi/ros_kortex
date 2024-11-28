@@ -61,7 +61,7 @@ def robot_to_xr(robot, port, xr, period=1):
             time.sleep(period)
 
 if __name__ == '__main__':
-    host = "10.13.145.123"
+    host = "10.13.146.99"
     port = 9090
 
     listen_thread = Thread(target=listen_from_xr, args=(host, port))

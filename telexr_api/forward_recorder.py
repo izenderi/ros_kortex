@@ -56,6 +56,9 @@ class ForwardKinematics:
         position = T[:3, 3]
         orientation = T[:3, :3]
 
+        # write to file forward_kinematics
+        with open('forward_kinematics', 'w') as file:
+            file.write(f"[{position[0]}, {position[1]}, {position[2]}]")  # Convert list to string and write it to the file
         
         return position, orientation
     
@@ -90,10 +93,6 @@ class ForwardKinematics:
 
                     time1 = time.time()
                     data_string = f"[{position[0]}, {position[1]}, {position[2]}, 0.0, 0.0, 0.0, 0.0]"
-                    
-                    # rospy.loginfo("Timestamp: %s", time.time())
-                    # rospy.loginfo("Position of the end effector: %s", position)
-                    # rospy.loginfo("Orientation of the end effector (rotation matrix): %s", orientation)
 
                     data_log.append([time1, data_string])
 
