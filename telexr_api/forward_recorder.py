@@ -55,10 +55,6 @@ class ForwardKinematics:
         # Extract the position and orientation
         position = T[:3, 3]
         orientation = T[:3, :3]
-
-        # write to file forward_kinematics
-        with open('forward_kinematics', 'w') as file:
-            file.write(f"[{position[0]}, {position[1]}, {position[2]}]")  # Convert list to string and write it to the file
         
         return position, orientation
     
@@ -72,9 +68,9 @@ class ForwardKinematics:
         position[1] += 0.0062074
         position[2] += 0.00068264
         return position
-   
 
     def main(self):
+
         data_log = []
         output_file = 'forward.csv'
 
@@ -90,6 +86,11 @@ class ForwardKinematics:
 
                     position, orientation = self.forward_kinematics(self.joint_angles)
                     position = self.error_offset(position)
+
+                    # write to file forward_kinematics
+                    with open('forward_kinematics', 'w') as file:
+                        file.write(f"[{position[0]:.6f}, {position[1]:.6f}, {position[2]:.6f}]")  # Convert list to string and write it to the file
+                        # file.write(str(position))
 
                     time1 = time.time()
                     data_string = f"[{position[0]}, {position[1]}, {position[2]}, 0.0, 0.0, 0.0, 0.0]"

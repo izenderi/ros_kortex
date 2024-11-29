@@ -16,6 +16,9 @@ import rospy
 import time
 import math
 
+import roslibpy
+import json
+
 from threading import Thread
 
 import actionlib
@@ -75,8 +78,8 @@ class WaypointActionClient:
             self.last_action_notif_type = None
             self.all_notifs_succeeded = True
 
-            # outut csv
-            self.data_log = []
+            # for rosbridge
+            self.user_pose = []
 
         except:
             self.is_init_success = False
@@ -174,40 +177,34 @@ class WaypointActionClient:
                 return False
             else:
                 return self.wait_for_action_end_or_abort()
-    
-    def buffer_pose(self, period=0.05):
-        while not rospy.is_shutdown():
-            try:
-                with open('data', 'r') as file:
-                    data = file.read().strip()
-                with open('t1', 'r') as file:
-                    time_end_bridge = file.read().strip()
-                with open('msg_id', 'r') as file:
-                    msg_id = file.read().strip()
-            except FileNotFoundError:
-                rospy.logwarn("Data, t1, msg_id file not found. Waiting...")
-                time.sleep(period)
-                continue
+            
+    def parse_message(self, message):
+        listener_start = time.time()
 
-            if data:
-                try:
-                    time1, data_string = data.split(":", 1)
-                    six_dof = eval(data_string.strip())  # Use ast.literal_eval if possible for safety
-                except (ValueError, SyntaxError):
-                    rospy.logwarn("Invalid data format. Skipping...")
-                    continue
+        parsed_message = json.loads(message)
+        message_id = parsed_message['message_id']
+        fused_pose = parsed_message['fused_pose']
+        time1 = parsed_message['time1']
 
-                x = 0.5 + six_dof[2] * 1
-                y = 0.0 + six_dof[0] * -1
-                z = 0.5 + six_dof[1] * 1
+        self.user_pose = eval(fused_pose)
 
-                if msg_id not in self.buffered_msg_ids:
-                    self.buffered_msg_ids.append(msg_id)
+    def listen_from_xr(self, xr, port):
+        client = roslibpy.Ros(host=xr, port=port)
+        client.run()
+
+        listener = roslibpy.Topic(client, '/chatter', 'std_msgs/String')
+        listener.subscribe(lambda message: self.parse_message(message['data']))
+
+        try:
+            while not rospy.is_shutdown():
+                if self.user_pose:
+                    x = 0.5 + self.user_pose[2] * 1
+                    y = 0.0 + self.user_pose[0] * -1
+                    z = 0.5 + self.user_pose[1] * 1
+
                     self.buffered_way_points.append([x, y, z])
-
-                # rospy.loginfo(f"{len(self.buffered_way_points)} waypoints...")
-
-            time.sleep(period)
+        except KeyboardInterrupt:
+            client.terminate()
     
     def publish_velocity(self):
         rate = rospy.Rate(100)  # 20Hz = 50ms sleep
@@ -216,7 +213,7 @@ class WaypointActionClient:
 
         while not rospy.is_shutdown():
             if not self.buffered_way_points:
-                rospy.loginfo("No waypoints in buffer. Stopping robot.")
+                # rospy.loginfo("No waypoints in buffer. Stopping robot.")
                 self.stop_robot()
                 rate.sleep()
                 continue
@@ -236,9 +233,9 @@ class WaypointActionClient:
 
             # Get the target pose
             target_x, target_y, target_z = self.buffered_way_points[0]
-            # print(target_x)
-            # print(target_y)
-            # print(target_z)
+            print(target_x)
+            print(target_y)
+            print(target_z)
 
             # Calculate the difference
             diff_x = target_x - current_x
@@ -307,13 +304,14 @@ class WaypointActionClient:
             success &= self.example_home_the_robot()
             #*******************************************************************************
 
-            buffer_thread = Thread(target=self.buffer_pose)
+            listen_thread = Thread(target=self.listen_from_xr, args=("10.13.146.99", 9090))
             publish_velocity_thread = Thread(target=self.publish_velocity)
 
-            buffer_thread.start()
+            listen_thread.start()
+            time.sleep(3)
             publish_velocity_thread.start()
 
-            buffer_thread.join()
+            listen_thread.join()
             publish_velocity_thread.join()
 
         # For testing purposes
