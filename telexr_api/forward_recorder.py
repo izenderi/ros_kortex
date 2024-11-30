@@ -6,6 +6,10 @@ import rospy
 import numpy as np
 from sensor_msgs.msg import JointState
 
+from threading import Thread
+
+import socket
+
 class ForwardKinematics:
     def __init__(self):
         rospy.init_node('forward_kinematics')
@@ -13,6 +17,11 @@ class ForwardKinematics:
         rospy.loginfo("Using robot_name " + self.robot_name)
         self.joint_state_sub = rospy.Subscriber("/" + self.robot_name + "/joint_states", JointState, self.cb_joint_state)
         self.joint_angles = None
+
+        self.position_string = "" # storage for latest position
+
+        self.freq = 100
+        self.period = 1/self.freq
 
     def cb_joint_state(self, joint_state):
         self.joint_angles = joint_state.position
@@ -68,14 +77,13 @@ class ForwardKinematics:
         position[1] += 0.0062074
         position[2] += 0.00068264
         return position
-
-    def main(self):
-
+    
+    def main_fk(self):
         data_log = []
         output_file = 'forward.csv'
 
         rospy.loginfo("Waiting for joint states...")
-        rate = rospy.Rate(80)  # 80 Hz
+        rate = rospy.Rate(self.freq)  # 100 Hz
         # while not rospy.is_shutdown() and self.joint_angles is None:
 
         try:
@@ -84,16 +92,20 @@ class ForwardKinematics:
 
                 if self.joint_angles:
 
+                    time0 = time.time()
+
                     position, orientation = self.forward_kinematics(self.joint_angles)
                     position = self.error_offset(position)
 
                     # write to file forward_kinematics
                     with open('forward_kinematics', 'w') as file:
-                        file.write(f"[{position[0]:.6f}, {position[1]:.6f}, {position[2]:.6f}]")  # Convert list to string and write it to the file
+                        file.write(f"[{position[0]:.4f}, {position[1]:.4f}, {position[2]:.4f}]")  # Convert list to string and write it to the file
                         # file.write(str(position))
 
                     time1 = time.time()
+                    # print("Exe Time:", str(time1-time0))
                     data_string = f"[{position[0]}, {position[1]}, {position[2]}, 0.0, 0.0, 0.0, 0.0]"
+                    self.position_string = data_string
 
                     data_log.append([time1, data_string])
 
@@ -108,6 +120,44 @@ class ForwardKinematics:
                 writer.writerow(["Timestamp", "gt_bot_pose"])
                 writer.writerows(data_log)
             print(f"Data saved to {output_file}. Exiting...")
+    
+    def robot_to_xr(self, robot, port, xr, period=1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((xr, port))
+
+            prev_message_id = -1
+            time1_string = ""
+            
+            while True:
+                with open('msg_id', 'r') as file:
+                    msg_id = file.read().strip()
+                    if msg_id != '':
+                        message_id = int(msg_id)
+
+                if prev_message_id < message_id:
+                    print(message_id)
+                    prev_message_id = message_id
+                    # Get the current pose from file
+                    with open('time1', 'r') as file:
+                        time1_string = file.read().strip()
+
+                data = f"{time1_string}:{self.position_string}"
+                s.sendall(data.encode())
+                time.sleep(period)
+
+    def main(self):
+
+        with open('msg_id', 'w') as file:
+            file.write('0')
+        
+        fk_thread = Thread(target=self.main_fk)
+        robot_to_xr_thread = Thread(target=self.robot_to_xr, args=("", 9091, "10.13.146.99", self.period)) # 0.05 = 50ms period
+
+        fk_thread.start()
+        robot_to_xr_thread.start()
+
+        fk_thread.join()
+        robot_to_xr_thread.join()
 
 if __name__ == "__main__":
     fk = ForwardKinematics()

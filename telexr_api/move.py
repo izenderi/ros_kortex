@@ -117,7 +117,7 @@ class WaypointActionClient:
     def FillTwistCommand(self, reference_frame, linear_x, linear_y, linear_z, angular_x, angular_y, angular_z, duration):
         # Create and publish the velocity command
         twist_command = TwistCommand()
-        twist_command.reference_frame = reference_frame  # Base reference frame
+        twist_command.reference_frame = reference_frame  # Base reference frame, normally 0
         twist_command.twist.linear_x = linear_x
         twist_command.twist.linear_y = linear_y
         twist_command.twist.linear_z = linear_z
@@ -187,6 +187,14 @@ class WaypointActionClient:
         time1 = parsed_message['time1']
 
         self.user_pose = eval(fused_pose)
+        self.message_id = message_id
+
+        # write to file forward_kinematics
+        with open('time1', 'w') as file:
+            file.write(str(time1))
+
+        with open('msg_id', 'w') as file:
+            file.write(str(message_id))
 
     def listen_from_xr(self, xr, port):
         client = roslibpy.Ros(host=xr, port=port)
@@ -202,29 +210,40 @@ class WaypointActionClient:
                     y = 0.0 + self.user_pose[0] * -1
                     z = 0.5 + self.user_pose[1] * 1
 
-                    self.buffered_way_points.append([x, y, z])
+                    if [x,y,z] not in self.buffered_way_points:
+                        self.buffered_way_points.append([x, y, z])
+                # print("Len of buffer: ", len(self.buffered_way_points))
         except KeyboardInterrupt:
             client.terminate()
     
     def publish_velocity(self):
         rate = rospy.Rate(100)  # 20Hz = 50ms sleep
         speed_factor = 1  # Scaling factor for the speed
-        threshold = 0.01  # Threshold to consider the target reached
+        threshold = 0.05  # Threshold to consider the target reached
+        
+        current_pose_string = ""
+        current_pose = []
+
 
         while not rospy.is_shutdown():
+
+            time_start = time.time()
+
             if not self.buffered_way_points:
                 # rospy.loginfo("No waypoints in buffer. Stopping robot.")
-                self.stop_robot()
                 rate.sleep()
                 continue
 
             # Get the current pose from file
-            current_pose_string = ""
-            current_pose = []
             with open('forward_kinematics', 'r') as file:
                 current_pose_string = file.read().strip()
+
+            # Remove the first `]` if there are two or more
+            if current_pose_string.count(']') > 1:
+                current_pose_string = current_pose_string.replace(']', '', 1)
+
             if current_pose_string:
-                current_pose = eval(current_pose_string.strip()) 
+                current_pose = eval(current_pose_string.strip())
             else:
                 continue
             # print("current_pose:", current_pose)
@@ -233,9 +252,7 @@ class WaypointActionClient:
 
             # Get the target pose
             target_x, target_y, target_z = self.buffered_way_points[0]
-            print(target_x)
-            print(target_y)
-            print(target_z)
+            # print(f"target_pose: {target_x}, {target_y}, {target_z}")
 
             # Calculate the difference
             diff_x = target_x - current_x
@@ -245,10 +262,17 @@ class WaypointActionClient:
             # Calculate the distance to the target
             distance = math.sqrt(diff_x**2 + diff_y**2 + diff_z**2)
 
-            # Check if the target is reached
+            self.buffered_way_points.clear()  # Clear buffered waypoints after sending
+            self.buffered_msg_ids.clear()  # Clear buffered timestamp after sending
+
+             # Check if the target is reached
             if distance < threshold:
+                self.stop_robot()
                 rospy.loginfo("Target reached. Removing waypoint from buffer.")
-                self.buffered_way_points.pop(0)
+                # self.buffered_way_points.pop(0)
+                # self.buffered_way_points.clear()  # Clear buffered waypoints after sending
+                # self.buffered_msg_ids.clear()  # Clear buffered timestamp after sending
+                rate.sleep()
                 continue
 
             # Calculate normalized velocity components
@@ -259,10 +283,10 @@ class WaypointActionClient:
             # Create and publish the velocity command
             twist_command = self.FillTwistCommand(0, velocity_x, velocity_y, velocity_z, 0.0, 0.0, 0.0, 0)
 
-            self.buffered_way_points.clear()  # Clear buffered waypoints after sending
-            self.buffered_msg_ids.clear()  # Clear buffered timestamp after sending
-
             self.velocity_publisher.publish(twist_command)
+
+            # print("exe time:", time.time()-time_start)
+
             rate.sleep()
 
 
