@@ -217,7 +217,7 @@ class WaypointActionClient:
             client.terminate()
     
     def publish_velocity(self):
-        rate = rospy.Rate(100)  # 20Hz = 50ms sleep
+        rate = rospy.Rate(20)  # 20Hz = 50ms sleep, which is the same as XR side transmission
         speed_factor = 1  # Scaling factor for the speed
         threshold = 0.05  # Threshold to consider the target reached
         
@@ -230,7 +230,8 @@ class WaypointActionClient:
             time_start = time.time()
 
             if not self.buffered_way_points:
-                # rospy.loginfo("No waypoints in buffer. Stopping robot.")
+                self.stop_robot()
+                rospy.loginfo("No waypoints in buffer. Stopping robot.")
                 rate.sleep()
                 continue
 
