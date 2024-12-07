@@ -102,9 +102,14 @@ class ForwardKinematics:
                         file.write(f"[{position[0]:.4f}, {position[1]:.4f}, {position[2]:.4f}]")  # Convert list to string and write it to the file
                         # file.write(str(position))
 
+                    # convert to xr pose
+                    vbot_pose_x = position[1] * -1
+                    vbot_pose_y = position[2] - 0.5
+                    vbot_pose_z = position[0] - 0.5
+
                     time1 = time.time()
                     # print("Exe Time:", str(time1-time0))
-                    data_string = f"[{position[0]}, {position[1]}, {position[2]}, 0.0, 0.0, 0.0, 0.0]"
+                    data_string = f"[{vbot_pose_x}, {vbot_pose_y}, {vbot_pose_z}, 0.0, 0.0, 0.0, 0.0]"
                     self.position_string = data_string
 
                     data_log.append([time1, data_string])
@@ -151,7 +156,7 @@ class ForwardKinematics:
             file.write('0')
         
         fk_thread = Thread(target=self.main_fk)
-        robot_to_xr_thread = Thread(target=self.robot_to_xr, args=("", 9091, "10.13.146.99", self.period)) # 0.05 = 50ms period
+        robot_to_xr_thread = Thread(target=self.robot_to_xr, args=("", 9091, "10.13.144.84", self.period)) # 0.05 = 50ms period
 
         fk_thread.start()
         robot_to_xr_thread.start()

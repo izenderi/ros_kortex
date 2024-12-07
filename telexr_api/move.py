@@ -193,6 +193,9 @@ class WaypointActionClient:
         with open('time1', 'w') as file:
             file.write(str(time1))
 
+        # with open('listen_pose', 'w') as file:
+        #     file.write(str(fused_pose))
+
         with open('msg_id', 'w') as file:
             file.write(str(message_id))
 
@@ -254,6 +257,9 @@ class WaypointActionClient:
             # Get the target pose
             target_x, target_y, target_z = self.buffered_way_points[0]
             # print(f"target_pose: {target_x}, {target_y}, {target_z}")
+
+            # with open('target_pose', 'w') as file:
+            #     file.write(f"[{target_x}, {target_y}, {target_z}]")
 
             # Calculate the difference
             diff_x = target_x - current_x
@@ -329,7 +335,7 @@ class WaypointActionClient:
             success &= self.example_home_the_robot()
             #*******************************************************************************
 
-            listen_thread = Thread(target=self.listen_from_xr, args=("10.13.146.99", 9090))
+            listen_thread = Thread(target=self.listen_from_xr, args=("10.13.144.84", 9090))
             publish_velocity_thread = Thread(target=self.publish_velocity)
 
             listen_thread.start()
