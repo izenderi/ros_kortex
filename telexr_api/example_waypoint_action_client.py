@@ -325,8 +325,8 @@ class ExampleWaypointActionClient:
             #*******************************************************************************
             # Example of Cartesian waypoint using an action client
             # success &= self.example_cartesian_waypoint_action()
-            # success &= self.r10_example_cartesian_waypoint_action()
-            self.publish_velocity()
+            success &= self.r10_example_cartesian_waypoint_action()
+            # self.publish_velocity()
             #*******************************************************************************
 
             #*******************************************************************************

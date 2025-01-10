@@ -147,6 +147,9 @@ class ForwardKinematics:
                         time1_string = file.read().strip()
 
                 data = f"{time1_string}:{self.position_string}"
+                # ------------------- <RTEN> control delay -------------------------
+                # time.sleep(0.6)
+                # ----------------------- </RTEN> ---------------------------------
                 s.sendall(data.encode())
                 time.sleep(period)
 
@@ -156,7 +159,7 @@ class ForwardKinematics:
             file.write('0')
         
         fk_thread = Thread(target=self.main_fk)
-        robot_to_xr_thread = Thread(target=self.robot_to_xr, args=("", 9091, "10.13.144.84", self.period)) # 0.05 = 50ms period
+        robot_to_xr_thread = Thread(target=self.robot_to_xr, args=("", 9091, "10.13.145.127", self.period)) # 0.05 = 50ms period
 
         fk_thread.start()
         robot_to_xr_thread.start()

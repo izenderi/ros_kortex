@@ -221,7 +221,7 @@ class WaypointActionClient:
     
     def publish_velocity(self):
         rate = rospy.Rate(20)  # 20Hz = 50ms sleep, which is the same as XR side transmission
-        speed_factor = 1  # Scaling factor for the speed
+        speed_factor = 1  # Scaling factor for the speed, 1 is the max speed
         threshold = 0.05  # Threshold to consider the target reached
         
         current_pose_string = ""
@@ -335,7 +335,7 @@ class WaypointActionClient:
             success &= self.example_home_the_robot()
             #*******************************************************************************
 
-            listen_thread = Thread(target=self.listen_from_xr, args=("10.13.144.84", 9090))
+            listen_thread = Thread(target=self.listen_from_xr, args=("10.13.145.127", 9090))
             publish_velocity_thread = Thread(target=self.publish_velocity)
 
             listen_thread.start()
