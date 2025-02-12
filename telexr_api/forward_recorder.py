@@ -9,6 +9,7 @@ from sensor_msgs.msg import JointState
 from threading import Thread
 
 import socket
+import argparse
 
 class ForwardKinematics:
     def __init__(self):
@@ -153,13 +154,13 @@ class ForwardKinematics:
                 s.sendall(data.encode())
                 time.sleep(period)
 
-    def main(self):
+    def main(self, xr_ip, port):
 
         with open('msg_id', 'w') as file:
             file.write('0')
         
         fk_thread = Thread(target=self.main_fk)
-        robot_to_xr_thread = Thread(target=self.robot_to_xr, args=("", 9091, "10.13.145.127", self.period)) # 0.05 = 50ms period
+        robot_to_xr_thread = Thread(target=self.robot_to_xr, args=("", port, xr_ip, self.period)) # 0.05 = 50ms period
 
         fk_thread.start()
         robot_to_xr_thread.start()
@@ -169,4 +170,11 @@ class ForwardKinematics:
 
 if __name__ == "__main__":
     fk = ForwardKinematics()
-    fk.main()
+    # add a mandatory ip_address of xr argument
+    parser = argparse.ArgumentParser(description='Forward Kinematics')
+    parser.add_argument('xr_ip', metavar='xr_ip', type=str, help='IP address of the XR device')
+    args = parser.parse_args()
+    # get the ip_address value
+    xr_ip = args.xr_ip
+    port = 9091 # for robot to xr communication (robot pose posting)
+    fk.main(xr_ip, port)

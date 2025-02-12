@@ -15,6 +15,7 @@ import sys
 import rospy
 import time
 import math
+import argparse
 
 import roslibpy
 import json
@@ -311,7 +312,7 @@ class WaypointActionClient:
         self.velocity_publisher.publish(stop_command)
     
 
-    def main(self):
+    def main(self, xr_ip, port):
         # For testing purposes
         success = self.is_init_success
         try:
@@ -335,7 +336,7 @@ class WaypointActionClient:
             success &= self.example_home_the_robot()
             #*******************************************************************************
 
-            listen_thread = Thread(target=self.listen_from_xr, args=("10.13.145.127", 9090))
+            listen_thread = Thread(target=self.listen_from_xr, args=(xr_ip, port))
             publish_velocity_thread = Thread(target=self.publish_velocity)
 
             listen_thread.start()
@@ -354,4 +355,11 @@ class WaypointActionClient:
 
 if __name__ == "__main__":
     ex = WaypointActionClient()
-    ex.main()
+    # add a mandatory ip_address of xr argument
+    parser = argparse.ArgumentParser(description='Waypoint Action Client Example')
+    parser.add_argument('xr_ip', metavar='xr_ip', type=str, help='IP address of the XR device')
+    args = parser.parse_args()
+    # get the ip_address value
+    xr_ip = args.xr_ip
+    port = 9090
+    ex.main(xr_ip, port)
