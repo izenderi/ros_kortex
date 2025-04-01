@@ -15,7 +15,6 @@ import sys
 import rospy
 import time
 import math
-import argparse
 
 import roslibpy
 import json
@@ -222,8 +221,8 @@ class WaypointActionClient:
     
     def publish_velocity(self):
         rate = rospy.Rate(20)  # 20Hz = 50ms sleep, which is the same as XR side transmission
-        speed_factor = 1  # Scaling factor for the speed, 1 is the max speed
-        threshold = 0.05  # Threshold to consider the target reached
+        speed_factor = 1       # Scaling factor for the speed, 1 is the max speed
+        threshold = 0.05       # Threshold to consider the target reached
         
         current_pose_string = ""
         current_pose = []
@@ -270,14 +269,14 @@ class WaypointActionClient:
             # Calculate the distance to the target
             distance = math.sqrt(diff_x**2 + diff_y**2 + diff_z**2)
 
-            self.buffered_way_points.clear()  # Clear buffered waypoints after sending
-            self.buffered_msg_ids.clear()  # Clear buffered timestamp after sending
+            # self.buffered_way_points.clear()  # Cleastop_robotr buffered waypoints after sending
+            # self.buffered_msg_ids.clear()  # Clear buffered timestamp after sending
 
-             # Check if the target is reached
+            # Check if the target is reached
             if distance < threshold:
                 self.stop_robot()
                 rospy.loginfo("Target reached. Removing waypoint from buffer.")
-                # self.buffered_way_points.pop(0)
+                self.buffered_way_points.pop(0)
                 # self.buffered_way_points.clear()  # Clear buffered waypoints after sending
                 # self.buffered_msg_ids.clear()  # Clear buffered timestamp after sending
                 rate.sleep()
@@ -293,7 +292,7 @@ class WaypointActionClient:
 
             self.velocity_publisher.publish(twist_command)
 
-            print("exe time:", time.time()-time_start)
+            # print("exe time:", time.time()-time_start)
 
             rate.sleep()
 
@@ -312,7 +311,7 @@ class WaypointActionClient:
         self.velocity_publisher.publish(stop_command)
     
 
-    def main(self, xr_ip, port):
+    def main(self):
         # For testing purposes
         success = self.is_init_success
         try:
@@ -336,7 +335,7 @@ class WaypointActionClient:
             success &= self.example_home_the_robot()
             #*******************************************************************************
 
-            listen_thread = Thread(target=self.listen_from_xr, args=(xr_ip, port))
+            listen_thread = Thread(target=self.listen_from_xr, args=("10.13.145.127", 9090))
             publish_velocity_thread = Thread(target=self.publish_velocity)
 
             listen_thread.start()
@@ -355,11 +354,4 @@ class WaypointActionClient:
 
 if __name__ == "__main__":
     ex = WaypointActionClient()
-    # add a mandatory ip_address of xr argument
-    parser = argparse.ArgumentParser(description='Waypoint Action Client Example')
-    parser.add_argument('xr_ip', metavar='xr_ip', type=str, help='IP address of the XR device')
-    args = parser.parse_args()
-    # get the ip_address value
-    xr_ip = args.xr_ip
-    port = 9090
-    ex.main(xr_ip, port)
+    ex.main()

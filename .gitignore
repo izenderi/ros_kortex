@@ -1,0 +1,10 @@
+# files for runtime
+telexr_api/data
+telexr_api/data.csv
+telexr_api/forward_kinematics
+telexr_api/forward.csv
+telexr_api/listen_pose
+telexr_api/msg_id
+telexr_api/t1
+telexr_api/target_pose
+telexr_api/time1
